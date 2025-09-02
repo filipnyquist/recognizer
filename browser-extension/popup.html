@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            width: 300px;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2196F3;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status.enabled {
+            background-color: #e8f5e8;
+            color: #2e7d2e;
+            border: 1px solid #c3e6c3;
+        }
+        .status.disabled {
+            background-color: #fff2f2;
+            color: #d32f2f;
+            border: 1px solid #ffcdd2;
+        }
+        .controls {
+            margin: 15px 0;
+        }
+        .btn {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        .btn-primary {
+            background-color: #2196F3;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #1976D2;
+        }
+        .btn-secondary {
+            background-color: #f5f5f5;
+            color: #333;
+            border: 1px solid #ddd;
+        }
+        .btn-secondary:hover {
+            background-color: #e0e0e0;
+        }
+        .stats {
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+            margin-top: 15px;
+        }
+        .option {
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .option label {
+            font-size: 14px;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #2196F3;
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">🎭 reCognizer</div>
+    </div>
+    
+    <div id="status" class="status disabled">
+        Extension Disabled
+    </div>
+    
+    <div class="controls">
+        <button id="toggleBtn" class="btn btn-primary">Enable Extension</button>
+        <button id="testBtn" class="btn btn-secondary">Test Models</button>
+    </div>
+    
+    <div class="option">
+        <label for="autoSolve">Auto-solve reCAPTCHAs</label>
+        <label class="switch">
+            <input type="checkbox" id="autoSolve">
+            <span class="slider"></span>
+        </label>
+    </div>
+    
+    <div class="option">
+        <label for="showDebug">Show debug info</label>
+        <label class="switch">
+            <input type="checkbox" id="showDebug">
+            <span class="slider"></span>
+        </label>
+    </div>
+    
+    <div class="stats">
+        <div>Models loaded: <span id="modelStatus">Checking...</span></div>
+        <div>Solved: <span id="solvedCount">0</span></div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html>

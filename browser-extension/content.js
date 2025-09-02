@@ -104,7 +104,7 @@ class RecaptchaDetector {
     scanForRecaptchas() {
         if (this.isProcessing) return;
 
-        // Look for different types of reCAPTCHAs
+        // Look for different types of reCAPTCHAs and collect all unique elements
         const selectors = [
             '.g-recaptcha',
             '[data-sitekey]',
@@ -114,24 +114,27 @@ class RecaptchaDetector {
             '[data-callback]'
         ];
 
-        let found = false;
+        const allElements = new Set();
+        
+        // Collect all elements from all selectors, Set automatically deduplicates
         for (const selector of selectors) {
             const elements = document.querySelectorAll(selector);
-            if (elements.length > 0) {
-                found = true;
-                if (this.showDebug) {
-                    console.log(`reCognizer: Found ${elements.length} reCAPTCHA element(s) with selector: ${selector}`);
-                }
-                elements.forEach(el => this.handleRecaptcha(el));
+            elements.forEach(el => allElements.add(el));
+        }
+
+        if (allElements.size > 0) {
+            if (this.showDebug) {
+                console.log(`reCognizer: Found ${allElements.size} unique reCAPTCHA element(s)`);
             }
+            allElements.forEach(el => this.handleRecaptcha(el));
         }
 
         // Look for challenge iframes (the actual puzzle part)
         const challengeFrames = document.querySelectorAll('iframe[src*="bframe"]');
         challengeFrames.forEach(frame => this.handleChallengeFrame(frame));
 
-        if (found && this.showDebug) {
-            this.addDebugOverlay(`Found ${document.querySelectorAll(selectors.join(',')).length} reCAPTCHA(s)`);
+        if (allElements.size > 0 && this.showDebug) {
+            this.addDebugOverlay(`Found ${allElements.size} unique reCAPTCHA(s)`);
         }
     }
 

@@ -42,7 +42,7 @@ class ModelConverter:
             
             # Create dummy inputs
             dummy_text = ["a bicycle", "a car", "a bus"]  # Example text inputs
-            dummy_images = torch.randn(1, 3, 224, 224)  # Batch of 1 image
+            dummy_images = torch.rand(1, 3, 224, 224)  # Batch of 1 image
             
             # Process inputs
             inputs = processor(text=dummy_text, images=dummy_images, return_tensors="pt", padding=True)
@@ -97,7 +97,7 @@ class ModelConverter:
             
             # Create dummy inputs
             dummy_text = "a bicycle"
-            dummy_image = torch.randn(1, 3, 352, 352)  # CLIPSeg expects 352x352
+            dummy_image = torch.rand(1, 3, 352, 352)  # CLIPSeg expects 352x352
             
             inputs = processor(text=dummy_text, images=dummy_image, return_tensors="pt")
             

@@ -1,19 +1,25 @@
 // AI Detection Engine for browser - ONNX model inference
 class AIDetectionEngine {
-    constructor() {
+    constructor(ortRuntime = null) {
         this.models = {};
         this.config = null;
         this.isLoaded = false;
         this.ortPromise = null;
+        this.ort = ortRuntime; // Accept ONNX Runtime as parameter
     }
 
     async initialize() {
         if (this.isLoaded) return true;
 
         try {
-            // Load ONNX Runtime
-            this.ortPromise = this.loadOnnxRuntime();
-            this.ort = await this.ortPromise;
+            // Use provided ONNX Runtime or load it
+            if (this.ort) {
+                // ONNX Runtime already provided
+            } else {
+                // Load ONNX Runtime
+                this.ortPromise = this.loadOnnxRuntime();
+                this.ort = await this.ortPromise;
+            }
 
             // Load configuration
             await this.loadConfig();
@@ -29,14 +35,16 @@ class AIDetectionEngine {
 
     async loadOnnxRuntime() {
         try {
-            // Try to import ONNX Runtime from CDN
-            const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/esm/ort.min.js');
+            // Check if ONNX Runtime is already loaded globally
+            if (typeof ort !== 'undefined') {
+                return ort;
+            }
             
-            // Configure ONNX Runtime
-            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
-            ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
+            // For service workers, we need to load ONNX Runtime differently
+            // We'll defer the actual loading to when we need to run inference
+            // and use a content script or inject it into the page context
+            throw new Error('ONNX Runtime must be loaded in page context, not service worker');
             
-            return ort;
         } catch (error) {
             console.error('Failed to load ONNX Runtime:', error);
             throw error;
@@ -560,4 +568,9 @@ class AIDetectionEngine {
 // Export for use in background script
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = AIDetectionEngine;
+}
+
+// Make available globally for content scripts
+if (typeof window !== 'undefined') {
+    window.AIDetectionEngine = AIDetectionEngine;
 }

@@ -20,8 +20,41 @@ class RecaptchaDetector {
             if (this.enabled) {
                 this.startDetection();
             }
+        }
+    }
+
+    async loadAIEngine() {
+        if (this.aiEngine) {
+            return this.aiEngine;
+        }
+
+        try {
+            // Load ONNX Runtime in content script context where dynamic imports work
+            const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/esm/ort.min.js');
+            
+            // Configure ONNX Runtime
+            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+            ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
+            
+            // Load AI engine script and create instance
+            const script = document.createElement('script');
+            script.src = chrome.runtime.getURL('ai-engine.js');
+            document.head.appendChild(script);
+            
+            // Wait for script to load
+            await new Promise((resolve, reject) => {
+                script.onload = resolve;
+                script.onerror = reject;
+            });
+            
+            // Create AI engine instance with ONNX Runtime
+            this.aiEngine = new window.AIDetectionEngine(ort);
+            await this.aiEngine.initialize();
+            
+            return this.aiEngine;
         } catch (error) {
-            console.error('reCognizer: Failed to initialize:', error);
+            console.error('reCognizer: Failed to load AI engine:', error);
+            throw error;
         }
     }
 
@@ -286,15 +319,9 @@ class RecaptchaDetector {
             // Convert images to base64 for processing
             const imageData = await this.extractImageData(images);
 
-            // Send to background script for AI processing
-            const response = await chrome.runtime.sendMessage({
-                type: 'SOLVE_CAPTCHA',
-                data: {
-                    prompt: prompt,
-                    images: imageData,
-                    imageCount: images.length
-                }
-            });
+            // Load AI engine in content script context since service workers can't use dynamic imports
+            const aiEngine = await this.loadAIEngine();
+            const response = await aiEngine.detect(prompt, imageData, imageData.length === 16);
 
             if (response.success) {
                 if (this.showDebug) {

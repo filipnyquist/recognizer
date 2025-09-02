@@ -6,6 +6,7 @@ class RecaptchaDetector {
         this.showDebug = false;
         this.isProcessing = false;
         this.observer = null;
+        this.processedRecaptchas = new Set(); // Track processed reCAPTCHAs to avoid duplicates
         this.init();
     }
 
@@ -20,6 +21,12 @@ class RecaptchaDetector {
             if (this.enabled) {
                 this.startDetection();
             }
+        } catch (error) {
+            console.error('reCognizer: Failed to initialize:', error);
+            // Continue with default settings if background script is not available
+            this.enabled = false;
+            this.autoSolve = true;
+            this.showDebug = false;
         }
     }
 
@@ -149,6 +156,18 @@ class RecaptchaDetector {
     async handleRecaptcha(element) {
         if (this.isProcessing) return;
 
+        // Generate unique identifier for this reCAPTCHA element
+        const elementId = this.getElementIdentifier(element);
+        if (this.processedRecaptchas.has(elementId)) {
+            if (this.showDebug) {
+                console.log('reCognizer: Skipping already processed reCAPTCHA:', elementId);
+            }
+            return;
+        }
+
+        // Mark as processed to prevent duplicates
+        this.processedRecaptchas.add(elementId);
+
         try {
             if (this.showDebug) {
                 console.log('reCognizer: Processing reCAPTCHA element:', element);
@@ -171,7 +190,26 @@ class RecaptchaDetector {
             
         } catch (error) {
             console.error('reCognizer: Error handling reCAPTCHA:', error);
+            // Remove from processed set if there was an error, so it can be retried
+            this.processedRecaptchas.delete(elementId);
         }
+    }
+
+    getElementIdentifier(element) {
+        // Generate a unique identifier for the element based on multiple attributes
+        const rect = element.getBoundingClientRect();
+        const attributes = [
+            element.tagName,
+            element.id,
+            element.className,
+            element.getAttribute('data-sitekey') || '',
+            element.getAttribute('data-callback') || '',
+            Math.round(rect.top),
+            Math.round(rect.left),
+            Math.round(rect.width),
+            Math.round(rect.height)
+        ];
+        return attributes.join('|');
     }
 
     async handleChallengeFrame(frame) {
@@ -571,6 +609,8 @@ class RecaptchaDetector {
             this.observer.disconnect();
             this.observer = null;
         }
+        // Clear processed reCAPTCHAs when stopping
+        this.processedRecaptchas.clear();
     }
 }
 

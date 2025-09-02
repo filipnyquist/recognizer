@@ -38,11 +38,11 @@ class RecaptchaDetector {
         }
 
         try {
-            // Load ONNX Runtime in content script context where dynamic imports work
-            const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/esm/ort.min.js');
+            // Load ONNX Runtime from local embedded file
+            const ort = await import(chrome.runtime.getURL('libs/onnxruntime/ort.min.js'));
             
-            // Configure ONNX Runtime
-            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+            // Configure ONNX Runtime for local usage
+            ort.env.wasm.wasmPaths = chrome.runtime.getURL('libs/onnxruntime/');
             ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
             
             // Load AI engine script and create instance
@@ -69,7 +69,7 @@ class RecaptchaDetector {
             this.aiEngine = {
                 detect: () => Promise.resolve({
                     success: false,
-                    error: 'AI engine unavailable due to CSP or loading restrictions'
+                    error: 'AI engine unavailable - using manual solving mode'
                 }),
                 initialize: () => Promise.resolve(false)
             };

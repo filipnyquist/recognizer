@@ -102,6 +102,7 @@ class ExtensionManager {
         this.showDebug = false;
         this.solvedCount = 0;
         this.modelManager = new ModelManager();
+        this.injectedTabs = new Set(); // Track tabs where content script is already injected
         this.loadSettings();
         this.setupListeners();
     }
@@ -140,8 +141,23 @@ class ExtensionManager {
 
         // Listen for tab updates to inject content script if needed
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-            if (changeInfo.status === 'complete' && this.enabled) {
-                this.injectContentScript(tabId);
+            if (changeInfo.status === 'complete' && this.enabled && changeInfo.url) {
+                // Only inject if not already injected and URL changed
+                const tabKey = `${tabId}-${tab.url}`;
+                if (!this.injectedTabs.has(tabKey)) {
+                    this.injectContentScript(tabId, tab.url);
+                    this.injectedTabs.add(tabKey);
+                }
+            }
+        });
+
+        // Clean up tracking when tabs are removed
+        chrome.tabs.onRemoved.addListener((tabId) => {
+            // Remove all entries for this tab
+            for (const key of this.injectedTabs) {
+                if (key.startsWith(`${tabId}-`)) {
+                    this.injectedTabs.delete(key);
+                }
             }
         });
     }
@@ -160,8 +176,7 @@ class ExtensionManager {
                     break;
 
                 case 'TOGGLE_EXTENSION':
-                    this.enabled = !this.enabled;
-                    await this.saveSettings();
+                    await this.toggleExtension();
                     sendResponse({ enabled: this.enabled });
                     break;
 
@@ -204,21 +219,79 @@ class ExtensionManager {
         if (this.enabled) {
             chrome.action.setBadgeText({ text: "ON" });
             chrome.action.setBadgeBackgroundColor({ color: "#4CAF50" });
+            
+            // Inject content script into all open tabs when enabling
+            try {
+                const tabs = await chrome.tabs.query({});
+                for (const tab of tabs) {
+                    if (this.isInjectableUrl(tab.url)) {
+                        const tabKey = `${tab.id}-${tab.url}`;
+                        if (!this.injectedTabs.has(tabKey)) {
+                            this.injectContentScript(tab.id, tab.url);
+                            this.injectedTabs.add(tabKey);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error injecting into existing tabs:', error);
+            }
         } else {
             chrome.action.setBadgeText({ text: "OFF" });
             chrome.action.setBadgeBackgroundColor({ color: "#9E9E9E" });
+            
+            // Clear injected tabs tracking when disabling
+            this.injectedTabs.clear();
         }
     }
 
-    async injectContentScript(tabId) {
+    async injectContentScript(tabId, url = null) {
         try {
+            // Get tab URL if not provided
+            if (!url) {
+                const tab = await chrome.tabs.get(tabId);
+                url = tab.url;
+            }
+            
+            // Check if the URL is injectable
+            if (!this.isInjectableUrl(url)) {
+                console.log('reCognizer: Skipping injection for restricted URL:', url);
+                return;
+            }
+            
             await chrome.scripting.executeScript({
-                target: { tabId },
+                target: { tabId, allFrames: false }, // Only inject into main frame, not all frames
                 files: ['content.js']
             });
+            console.log('reCognizer: Content script injected successfully for:', url);
         } catch (error) {
             console.error('Failed to inject content script:', error);
         }
+    }
+
+    isInjectableUrl(url) {
+        if (!url) return false;
+        
+        // URLs that cannot be accessed by content scripts
+        const restrictedProtocols = [
+            'chrome://',
+            'chrome-extension://',
+            'moz-extension://',
+            'about:',
+            'edge://',
+            'opera://',
+            'vivaldi://',
+            'brave://'
+        ];
+        
+        // Check if URL starts with any restricted protocol
+        for (const protocol of restrictedProtocols) {
+            if (url.startsWith(protocol)) {
+                return false;
+            }
+        }
+        
+        // Only inject into http and https URLs
+        return url.startsWith('http://') || url.startsWith('https://');
     }
 
     async solveCaptcha(captchaData) {

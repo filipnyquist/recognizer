@@ -1,4 +1,6 @@
 // Content script for detecting and solving reCAPTCHAs
+// Prevent multiple declarations if script is injected more than once
+if (typeof window.RecaptchaDetector === 'undefined') {
 class RecaptchaDetector {
     constructor() {
         this.enabled = false;
@@ -6,6 +8,7 @@ class RecaptchaDetector {
         this.showDebug = false;
         this.isProcessing = false;
         this.observer = null;
+        this.processedRecaptchas = new Set(); // Track processed reCAPTCHAs to avoid duplicates
         this.init();
     }
 
@@ -20,6 +23,12 @@ class RecaptchaDetector {
             if (this.enabled) {
                 this.startDetection();
             }
+        } catch (error) {
+            console.error('reCognizer: Failed to initialize:', error);
+            // Continue with default settings if background script is not available
+            this.enabled = false;
+            this.autoSolve = true;
+            this.showDebug = false;
         }
     }
 
@@ -29,11 +38,11 @@ class RecaptchaDetector {
         }
 
         try {
-            // Load ONNX Runtime in content script context where dynamic imports work
-            const ort = await import('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/esm/ort.min.js');
+            // Load ONNX Runtime from local embedded file
+            const ort = await import(chrome.runtime.getURL('libs/onnxruntime/ort.min.js'));
             
-            // Configure ONNX Runtime
-            ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/';
+            // Configure ONNX Runtime for local usage
+            ort.env.wasm.wasmPaths = chrome.runtime.getURL('libs/onnxruntime/');
             ort.env.wasm.numThreads = navigator.hardwareConcurrency || 4;
             
             // Load AI engine script and create instance
@@ -54,7 +63,18 @@ class RecaptchaDetector {
             return this.aiEngine;
         } catch (error) {
             console.error('reCognizer: Failed to load AI engine:', error);
-            throw error;
+            console.log('reCognizer: AI solving disabled due to loading failure. Manual solving still available.');
+            
+            // Return a mock AI engine that indicates AI is unavailable
+            this.aiEngine = {
+                detect: () => Promise.resolve({
+                    success: false,
+                    error: 'AI engine unavailable - using manual solving mode'
+                }),
+                initialize: () => Promise.resolve(false)
+            };
+            
+            return this.aiEngine;
         }
     }
 
@@ -97,7 +117,7 @@ class RecaptchaDetector {
     scanForRecaptchas() {
         if (this.isProcessing) return;
 
-        // Look for different types of reCAPTCHAs
+        // Look for different types of reCAPTCHAs and collect all unique elements
         const selectors = [
             '.g-recaptcha',
             '[data-sitekey]',
@@ -107,24 +127,27 @@ class RecaptchaDetector {
             '[data-callback]'
         ];
 
-        let found = false;
+        const allElements = new Set();
+        
+        // Collect all elements from all selectors, Set automatically deduplicates
         for (const selector of selectors) {
             const elements = document.querySelectorAll(selector);
-            if (elements.length > 0) {
-                found = true;
-                if (this.showDebug) {
-                    console.log(`reCognizer: Found ${elements.length} reCAPTCHA element(s) with selector: ${selector}`);
-                }
-                elements.forEach(el => this.handleRecaptcha(el));
+            elements.forEach(el => allElements.add(el));
+        }
+
+        if (allElements.size > 0) {
+            if (this.showDebug) {
+                console.log(`reCognizer: Found ${allElements.size} unique reCAPTCHA element(s)`);
             }
+            allElements.forEach(el => this.handleRecaptcha(el));
         }
 
         // Look for challenge iframes (the actual puzzle part)
         const challengeFrames = document.querySelectorAll('iframe[src*="bframe"]');
         challengeFrames.forEach(frame => this.handleChallengeFrame(frame));
 
-        if (found && this.showDebug) {
-            this.addDebugOverlay(`Found ${document.querySelectorAll(selectors.join(',')).length} reCAPTCHA(s)`);
+        if (allElements.size > 0 && this.showDebug) {
+            this.addDebugOverlay(`Found ${allElements.size} unique reCAPTCHA(s)`);
         }
     }
 
@@ -149,6 +172,18 @@ class RecaptchaDetector {
     async handleRecaptcha(element) {
         if (this.isProcessing) return;
 
+        // Generate unique identifier for this reCAPTCHA element
+        const elementId = this.getElementIdentifier(element);
+        if (this.processedRecaptchas.has(elementId)) {
+            if (this.showDebug) {
+                console.log('reCognizer: Skipping already processed reCAPTCHA:', elementId);
+            }
+            return;
+        }
+
+        // Mark as processed to prevent duplicates
+        this.processedRecaptchas.add(elementId);
+
         try {
             if (this.showDebug) {
                 console.log('reCognizer: Processing reCAPTCHA element:', element);
@@ -171,7 +206,26 @@ class RecaptchaDetector {
             
         } catch (error) {
             console.error('reCognizer: Error handling reCAPTCHA:', error);
+            // Remove from processed set if there was an error, so it can be retried
+            this.processedRecaptchas.delete(elementId);
         }
+    }
+
+    getElementIdentifier(element) {
+        // Generate a unique identifier for the element based on multiple attributes
+        const rect = element.getBoundingClientRect();
+        const attributes = [
+            element.tagName,
+            element.id,
+            element.className,
+            element.getAttribute('data-sitekey') || '',
+            element.getAttribute('data-callback') || '',
+            Math.round(rect.top),
+            Math.round(rect.left),
+            Math.round(rect.width),
+            Math.round(rect.height)
+        ];
+        return attributes.join('|');
     }
 
     async handleChallengeFrame(frame) {
@@ -571,29 +625,42 @@ class RecaptchaDetector {
             this.observer.disconnect();
             this.observer = null;
         }
+        // Clear processed reCAPTCHAs when stopping
+        this.processedRecaptchas.clear();
     }
 }
 
+// Store the class globally to prevent redeclaration
+window.RecaptchaDetector = RecaptchaDetector;
+}
+
 // Initialize detector when content script loads
-let recaptchaDetector = null;
+// Use a global variable to prevent multiple instances across script injections
+if (typeof window.recaptchaDetector === 'undefined') {
+    window.recaptchaDetector = null;
+}
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'STATUS_UPDATE') {
-        if (message.enabled && !recaptchaDetector) {
-            recaptchaDetector = new RecaptchaDetector();
-        } else if (!message.enabled && recaptchaDetector) {
-            recaptchaDetector.stop();
-            recaptchaDetector = null;
+        if (message.enabled && !window.recaptchaDetector) {
+            window.recaptchaDetector = new window.RecaptchaDetector();
+        } else if (!message.enabled && window.recaptchaDetector) {
+            window.recaptchaDetector.stop();
+            window.recaptchaDetector = null;
         }
     }
 });
 
-// Auto-start if page is already loaded
+// Auto-start if page is already loaded and no detector exists
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        recaptchaDetector = new RecaptchaDetector();
+        if (!window.recaptchaDetector) {
+            window.recaptchaDetector = new window.RecaptchaDetector();
+        }
     });
 } else {
-    recaptchaDetector = new RecaptchaDetector();
+    if (!window.recaptchaDetector) {
+        window.recaptchaDetector = new window.RecaptchaDetector();
+    }
 }

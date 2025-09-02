@@ -141,7 +141,7 @@ class ExtensionManager {
         // Listen for tab updates to inject content script if needed
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             if (changeInfo.status === 'complete' && this.enabled) {
-                this.injectContentScript(tabId);
+                this.injectContentScript(tabId, tab.url);
             }
         });
     }
@@ -210,15 +210,54 @@ class ExtensionManager {
         }
     }
 
-    async injectContentScript(tabId) {
+    async injectContentScript(tabId, url = null) {
         try {
+            // Get tab URL if not provided
+            if (!url) {
+                const tab = await chrome.tabs.get(tabId);
+                url = tab.url;
+            }
+            
+            // Check if the URL is injectable
+            if (!this.isInjectableUrl(url)) {
+                console.log('reCognizer: Skipping injection for restricted URL:', url);
+                return;
+            }
+            
             await chrome.scripting.executeScript({
                 target: { tabId },
                 files: ['content.js']
             });
+            console.log('reCognizer: Content script injected successfully for:', url);
         } catch (error) {
             console.error('Failed to inject content script:', error);
         }
+    }
+
+    isInjectableUrl(url) {
+        if (!url) return false;
+        
+        // URLs that cannot be accessed by content scripts
+        const restrictedProtocols = [
+            'chrome://',
+            'chrome-extension://',
+            'moz-extension://',
+            'about:',
+            'edge://',
+            'opera://',
+            'vivaldi://',
+            'brave://'
+        ];
+        
+        // Check if URL starts with any restricted protocol
+        for (const protocol of restrictedProtocols) {
+            if (url.startsWith(protocol)) {
+                return false;
+            }
+        }
+        
+        // Only inject into http and https URLs
+        return url.startsWith('http://') || url.startsWith('https://');
     }
 
     async solveCaptcha(captchaData) {

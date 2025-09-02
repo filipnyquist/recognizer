@@ -176,8 +176,7 @@ class ExtensionManager {
                     break;
 
                 case 'TOGGLE_EXTENSION':
-                    this.enabled = !this.enabled;
-                    await this.saveSettings();
+                    await this.toggleExtension();
                     sendResponse({ enabled: this.enabled });
                     break;
 
@@ -220,9 +219,28 @@ class ExtensionManager {
         if (this.enabled) {
             chrome.action.setBadgeText({ text: "ON" });
             chrome.action.setBadgeBackgroundColor({ color: "#4CAF50" });
+            
+            // Inject content script into all open tabs when enabling
+            try {
+                const tabs = await chrome.tabs.query({});
+                for (const tab of tabs) {
+                    if (this.isInjectableUrl(tab.url)) {
+                        const tabKey = `${tab.id}-${tab.url}`;
+                        if (!this.injectedTabs.has(tabKey)) {
+                            this.injectContentScript(tab.id, tab.url);
+                            this.injectedTabs.add(tabKey);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error injecting into existing tabs:', error);
+            }
         } else {
             chrome.action.setBadgeText({ text: "OFF" });
             chrome.action.setBadgeBackgroundColor({ color: "#9E9E9E" });
+            
+            // Clear injected tabs tracking when disabling
+            this.injectedTabs.clear();
         }
     }
 
@@ -241,7 +259,7 @@ class ExtensionManager {
             }
             
             await chrome.scripting.executeScript({
-                target: { tabId },
+                target: { tabId, allFrames: false }, // Only inject into main frame, not all frames
                 files: ['content.js']
             });
             console.log('reCognizer: Content script injected successfully for:', url);

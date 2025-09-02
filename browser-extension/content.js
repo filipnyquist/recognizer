@@ -1,4 +1,6 @@
 // Content script for detecting and solving reCAPTCHAs
+// Prevent multiple declarations if script is injected more than once
+if (typeof window.RecaptchaDetector === 'undefined') {
 class RecaptchaDetector {
     constructor() {
         this.enabled = false;
@@ -61,7 +63,18 @@ class RecaptchaDetector {
             return this.aiEngine;
         } catch (error) {
             console.error('reCognizer: Failed to load AI engine:', error);
-            throw error;
+            console.log('reCognizer: AI solving disabled due to loading failure. Manual solving still available.');
+            
+            // Return a mock AI engine that indicates AI is unavailable
+            this.aiEngine = {
+                detect: () => Promise.resolve({
+                    success: false,
+                    error: 'AI engine unavailable due to CSP or loading restrictions'
+                }),
+                initialize: () => Promise.resolve(false)
+            };
+            
+            return this.aiEngine;
         }
     }
 
@@ -617,26 +630,37 @@ class RecaptchaDetector {
     }
 }
 
+// Store the class globally to prevent redeclaration
+window.RecaptchaDetector = RecaptchaDetector;
+}
+
 // Initialize detector when content script loads
-let recaptchaDetector = null;
+// Use a global variable to prevent multiple instances across script injections
+if (typeof window.recaptchaDetector === 'undefined') {
+    window.recaptchaDetector = null;
+}
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'STATUS_UPDATE') {
-        if (message.enabled && !recaptchaDetector) {
-            recaptchaDetector = new RecaptchaDetector();
-        } else if (!message.enabled && recaptchaDetector) {
-            recaptchaDetector.stop();
-            recaptchaDetector = null;
+        if (message.enabled && !window.recaptchaDetector) {
+            window.recaptchaDetector = new window.RecaptchaDetector();
+        } else if (!message.enabled && window.recaptchaDetector) {
+            window.recaptchaDetector.stop();
+            window.recaptchaDetector = null;
         }
     }
 });
 
-// Auto-start if page is already loaded
+// Auto-start if page is already loaded and no detector exists
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        recaptchaDetector = new RecaptchaDetector();
+        if (!window.recaptchaDetector) {
+            window.recaptchaDetector = new window.RecaptchaDetector();
+        }
     });
 } else {
-    recaptchaDetector = new RecaptchaDetector();
+    if (!window.recaptchaDetector) {
+        window.recaptchaDetector = new window.RecaptchaDetector();
+    }
 }

@@ -102,6 +102,7 @@ class ExtensionManager {
         this.showDebug = false;
         this.solvedCount = 0;
         this.modelManager = new ModelManager();
+        this.injectedTabs = new Set(); // Track tabs where content script is already injected
         this.loadSettings();
         this.setupListeners();
     }
@@ -140,8 +141,23 @@ class ExtensionManager {
 
         // Listen for tab updates to inject content script if needed
         chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-            if (changeInfo.status === 'complete' && this.enabled) {
-                this.injectContentScript(tabId, tab.url);
+            if (changeInfo.status === 'complete' && this.enabled && changeInfo.url) {
+                // Only inject if not already injected and URL changed
+                const tabKey = `${tabId}-${tab.url}`;
+                if (!this.injectedTabs.has(tabKey)) {
+                    this.injectContentScript(tabId, tab.url);
+                    this.injectedTabs.add(tabKey);
+                }
+            }
+        });
+
+        // Clean up tracking when tabs are removed
+        chrome.tabs.onRemoved.addListener((tabId) => {
+            // Remove all entries for this tab
+            for (const key of this.injectedTabs) {
+                if (key.startsWith(`${tabId}-`)) {
+                    this.injectedTabs.delete(key);
+                }
             }
         });
     }
